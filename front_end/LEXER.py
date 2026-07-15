@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+
 from .Token import TokenType
 
 class Lexer:
@@ -46,7 +47,6 @@ class Lexer:
         node = self.op_trie # local var
         while self.current_char is not None and self.current_char in node:
             node = node[self.current_char]
-            potential_op = "".join(OP_Buffer) + self.current_char
             # big performence killer here and its any key word
             if '_end' in node:
                 OP_Buffer.append(self.current_char)
@@ -66,25 +66,25 @@ class Lexer:
                 node = node[char]
 
         if lexeme in self.operators:
-            return (TokenType.OP, self.operators[lexeme])
+            yield (TokenType.OP, self.operators[lexeme])
         else:
             raise SyntaxError(f"Invalid operator sequence: '{lexeme}'")
             
-    def number_helper(self)-> tuple:
+    def number_helper(self):
         num_buffer = []
         while self.current_char is not None and self.current_char.isdigit():
             num_buffer.append(self.current_char)
             self.move_next()
-        return (TokenType.INT, int("".join(num_buffer)))
+        yield (TokenType.INT, int("".join(num_buffer)))
 
-    def Identifiers_helper(self) -> tuple :
+    def Identifiers_helper(self):
         id_buffer = []
         while self.current_char is not None and (self.current_char.isalnum() or self.current_char == '_'):
             id_buffer.append(self.current_char)
             self.move_next()
 
         lexeme = "".join(id_buffer)
-        return (TokenType.IDENTIFIER, lexeme)
+        yield (TokenType.IDENTIFIER, lexeme)
 
     def tokenize(self): 
         
@@ -92,21 +92,20 @@ class Lexer:
             # 1. Skip Whitespace
             if self.current_char in ' \t\n\r':
                 self.move_next()
-                yield
                 continue
 
             # 2. Match Static Operators
             if self.current_char in self.operators:
-                yield self.operator_helper()
+                yield from self.operator_helper()
                 continue
             # 3. Match Numbers (Optimized List Buffer)
             elif self.current_char.isdigit():
-                yield self.number_helper()
+                yield from self.number_helper()
                 continue
 
             # 4. Match Identifiers / Keywords (Allows alphanumeric variable tracking)
             elif self.current_char.isalpha() or self.current_char == '_':
-                yield self.Identifiers_helper()
+                yield from self.Identifiers_helper()
                 continue
 
             # Fallback: Syntax Error Handling
