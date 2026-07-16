@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+
 class Lexer:
     __slots__ = ('index', 'source', 'current_char','Token_Type', 'operators','op_trie','DELIMITER','DELIMITER_trie')
     def __init__(self, source_code: str) -> None:
@@ -82,12 +83,45 @@ class Lexer:
 
     def number_helper(self):
         num_buffer = []
+        is_float = False
 
         while self.current_char is not None and self.current_char.isdigit():
             num_buffer.append(self.current_char)
             self.move_next()
 
-        yield (self.Token_Type['INT'], int("".join(num_buffer)))
+        if self.current_char == '.':
+            is_float = True
+            num_buffer.append('.')
+            self.move_next()
+
+            if not self.current_char or not self.current_char.isdigit():
+                raise SyntaxError("Invalid float: expected digits after decimal point")
+                
+            while self.current_char is not None and self.current_char.isdigit():
+                num_buffer.append(self.current_char)
+                self.move_next()
+
+        if self.current_char in ('e','E'):
+            is_float = True
+            num_buffer.append(self.current_char) # store
+            self.move_next() # eat
+            
+            if self.current_char in ('+','-'):
+                num_buffer.append(self.current_char) #store
+                self.move_next() # eat
+
+            if not self.current_char or not self.current_char.isdigit():
+                raise SyntaxError("Invalid exponent: expected digits")
+            
+            while self.current_char is not None and self.current_char.isdigit():
+                num_buffer.append(self.current_char) # store
+                self.move_next() # eat
+
+        number_str = ''.join(num_buffer)
+        if is_float:
+            yield (self.Token_Type['FLOAT'], float(number_str))
+        else:
+            yield (self.Token_Type['INT'], int(number_str))
 
     def Identifiers_helper(self):
         id_buffer = []
@@ -120,7 +154,7 @@ class Lexer:
             DELIMITER_buffer.pop()
 
         lexme = ''.join(DELIMITER_buffer)
-        yield (self.Token_Type['DELIMITER'],lexme) # index 4 is DELIMITER
+        yield (self.Token_Type['DELIMITER'],lexme)
 
     def tokenize(self): 
         
@@ -128,6 +162,10 @@ class Lexer:
             # 1. Skip Whitespace
             if self.current_char in ' \t\n\r':
                 self.move_next()
+                continue
+
+            elif self.current_char in self.DELIMITER:
+                yield from self.DELIMITER_helper()
                 continue
 
             # 2. Match Static Operators
@@ -142,10 +180,6 @@ class Lexer:
             # 4. Match Identifiers / Keywords (Allows alphanumeric variable tracking)
             elif self.current_char.isalpha() or self.current_char == '_':
                 yield from self.Identifiers_helper()
-                continue
-                
-            elif self.current_char in self.DELIMITER:
-                yield from self.DELIMITER_helper()
                 continue
 
             # Fallback: Syntax Error Handling
