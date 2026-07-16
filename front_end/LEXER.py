@@ -14,29 +14,41 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-
-from .Token import TokenType
-
 class Lexer:
-    __slots__ = ('index', 'source', 'current_char', 'operators','op_trie')
+    __slots__ = ('index', 'source', 'current_char','Token_Type', 'operators','op_trie','DELIMITER','DELIMITER_trie')
     def __init__(self, source_code: str) -> None:
         self.source:str = source_code
         self.index:int = -1
         self.current_char = None
+        self.Token_Type = {
+    'INT': 'INT',
+    'FLOAT': 'FLOAT',
+    'OP': 'OP',
+    'IDENTIFIER': 'IDENTIFIER',
+    'DELIMITER': 'DELIMITER',
+}
         
         # Pre allocated syntax registries
-        self.operators = {'+': 'PLUS', '-': 'MINUS', '*': 'MULTIPLY', '/': 'DIVIDE','//': 'FLOOR_DIVIDE','=': 'ASSIGN','!': 'NOT','!=': 'NOT_EQUAL'}
+        self.operators = {'+': 'PLUS', '-': 'MINUS', '*': 'MULTIPLY', '/': 'DIVIDE','//': 'FLOOR_DIVIDE',
+                        '=': 'ASSIGN','!': 'NOT','!=': 'NOT_EQUAL'}
+        self.DELIMITER ={';':'SEMICOLON',':' : 'COLON'}
+        #tries
+        self.op_trie = self.trie(self.operators)
+        self.DELIMITER_trie = self.trie(self.DELIMITER)
+        
+        self.move_next()
 
-        self.op_trie = {}
-        for op in self.operators:
-            node = self.op_trie
-            for char in op:
+    def trie(self,dicts:dict) -> dict:
+        tries = {}
+        for _types in dicts:
+            node = tries
+            for char in _types:
                 if char not in node:
                     node[char] = {}
                 node = node[char]
-            node['_end'] = op
-        
-        self.move_next()
+            node['_end'] = _types
+
+        return tries
 
     def move_next(self) -> None:
         self.index += 1
@@ -49,15 +61,15 @@ class Lexer:
 
         while self.current_char is not None and self.current_char in node:
             node = node[self.current_char]
+            OP_Buffer.append(self.current_char)
+            self.move_next()
 
             if '_end' in node:
-                OP_Buffer.append(self.current_char)
-                self.move_next()
-                if '_end' in node:
-                    last_valid_len = len(OP_Buffer)
+                last_valid_len = len(OP_Buffer)
 
         if last_valid_len == 0:
-            raise SyntaxError(f"Invalid operator sequence starting with '{self.source[self.index - len(OP_Buffer)]}'")
+            start_idx = max(0, self.index - len(OP_Buffer))
+            raise SyntaxError(f"Invalid operator sequence starting with '{self.source[start_idx]}'")
 
         while len(OP_Buffer) > last_valid_len:
             self.index -= 1
@@ -66,7 +78,7 @@ class Lexer:
 
         lexeme = "".join(OP_Buffer)
 
-        yield (TokenType.OP, self.operators[lexeme])
+        yield (self.Token_Type['OP'], self.operators[lexeme])
 
     def number_helper(self):
         num_buffer = []
@@ -75,7 +87,7 @@ class Lexer:
             num_buffer.append(self.current_char)
             self.move_next()
 
-        yield (TokenType.INT, int("".join(num_buffer)))
+        yield (self.Token_Type['INT'], int("".join(num_buffer)))
 
     def Identifiers_helper(self):
         id_buffer = []
@@ -84,7 +96,31 @@ class Lexer:
             self.move_next()
 
         lexeme = "".join(id_buffer)
-        yield (TokenType.IDENTIFIER, lexeme)
+        yield (self.Token_Type['IDENTIFIER'], lexeme)
+
+    def DELIMITER_helper(self):
+        DELIMITER_buffer = []
+        node = self.DELIMITER_trie
+        last_valid_DELIMITER = 0
+
+        while self.current_char is not None and self.current_char in node:
+            node = node[self.current_char]
+            DELIMITER_buffer.append(self.current_char) # store
+            self.move_next() # eat
+
+            if '_end' in node:
+                last_valid_DELIMTER = len(DELIMITER_buffer)
+
+        if last_valid_DELIMITER == 0:
+            raise SyntaxError(f"Invalid DELIMITER sequence starting with '{self.source[self.index - len(DELIMITER_buffer)]}'")
+
+        while len(DELIMITER_buffer) > last_valid_DELIMITER:
+            self.index -= 1
+            self.current_char = self.source[self.index]
+            DELIMITER_buffer.pop()
+
+        lexme = ''.join(DELIMITER_buffer)
+        yield (self.Token_Type['DELIMITER'],lexme) # index 4 is DELIMITER
 
     def tokenize(self): 
         
@@ -106,6 +142,10 @@ class Lexer:
             # 4. Match Identifiers / Keywords (Allows alphanumeric variable tracking)
             elif self.current_char.isalpha() or self.current_char == '_':
                 yield from self.Identifiers_helper()
+                continue
+                
+            elif self.current_char in self.DELIMITER:
+                yield from self.DELIMITER_helper()
                 continue
 
             # Fallback: Syntax Error Handling
