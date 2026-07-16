@@ -109,7 +109,7 @@ class Lexer:
             self.move_next() # eat
 
             if '_end' in node:
-                last_valid_DELIMTER = len(DELIMITER_buffer)
+                last_valid_DELIMITER = len(DELIMITER_buffer)
 
         if last_valid_DELIMITER == 0:
             raise SyntaxError(f"Invalid DELIMITER sequence starting with '{self.source[self.index - len(DELIMITER_buffer)]}'")
