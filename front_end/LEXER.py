@@ -24,8 +24,8 @@ class Lexer:
         self.index:int = -1
         self.current_char = None
         
-        # Pre-allocated O(1) syntax registries
-        self.operators = {'+': 'PLUS', '-': 'MINUS', '*': 'MULTIPLY', '/': 'DIVIDE','//': 'FLOOR_DIVIDE','=': 'ASSIGN'}
+        # Pre allocated syntax registries
+        self.operators = {'+': 'PLUS', '-': 'MINUS', '*': 'MULTIPLY', '/': 'DIVIDE','//': 'FLOOR_DIVIDE','=': 'ASSIGN','!': 'NOT','!=': 'NOT_EQUAL'}
 
         self.op_trie = {}
         for op in self.operators:
@@ -45,36 +45,36 @@ class Lexer:
     def operator_helper(self):
         OP_Buffer = []
         node = self.op_trie # local var
+        last_valid_len = 0
+
         while self.current_char is not None and self.current_char in node:
             node = node[self.current_char]
-            # big performence killer here and its any key word
+
             if '_end' in node:
                 OP_Buffer.append(self.current_char)
                 self.move_next()
-            else:
-                break
+                if '_end' in node:
+                    last_valid_len = len(OP_Buffer)
+
+        if last_valid_len == 0:
+            raise SyntaxError(f"Invalid operator sequence starting with '{self.source[self.index - len(OP_Buffer)]}'")
+
+        while len(OP_Buffer) > last_valid_len:
+            self.index -= 1
+            self.current_char = self.source[self.index]
+            OP_Buffer.pop()
 
         lexeme = "".join(OP_Buffer)
 
-        while lexeme and '_end' not in node:
-            # Backtrack
-            self.index -= 1
-            self.current_char = self.source[self.index] if self.index >= 0 else None
-            lexeme = lexeme[:-1]
-            node = self.op_trie
-            for char in lexeme:
-                node = node[char]
+        yield (TokenType.OP, self.operators[lexeme])
 
-        if lexeme in self.operators:
-            yield (TokenType.OP, self.operators[lexeme])
-        else:
-            raise SyntaxError(f"Invalid operator sequence: '{lexeme}'")
-            
     def number_helper(self):
         num_buffer = []
+
         while self.current_char is not None and self.current_char.isdigit():
             num_buffer.append(self.current_char)
             self.move_next()
+
         yield (TokenType.INT, int("".join(num_buffer)))
 
     def Identifiers_helper(self):
