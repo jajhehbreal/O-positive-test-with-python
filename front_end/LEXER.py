@@ -14,9 +14,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-
 class Lexer:
-    __slots__ = ('index', 'source', 'current_char','Token_Type', 'operators','op_trie','DELIMITER','DELIMITER_trie')
+    __slots__ = ('index', 'source', 'current_char','Token_Type', 'operators',
+                'op_trie','DELIMITER','DELIMITER_trie','keywords','type_hints')
+
     def __init__(self, source_code: str) -> None:
         self.source:str = source_code
         self.index:int = -1
@@ -27,15 +28,36 @@ class Lexer:
     'OP': 'OP',
     'IDENTIFIER': 'IDENTIFIER',
     'DELIMITER': 'DELIMITER',
+    'KEYWORD': 'KEYWORD',
+    'TYPE_HINT': 'TYPE'
 }
         
         # Pre allocated syntax registries
         self.operators = {'+': 'PLUS', '-': 'MINUS', '*': 'MULTIPLY', '/': 'DIVIDE','//': 'FLOOR_DIVIDE',
                         '=': 'ASSIGN','!': 'NOT','!=': 'NOT_EQUAL'}
+
+        self.keywords = {
+    'var': 'VAR',
+    'const': 'CONST',
+    'def': 'DEF',
+    'if': 'IF',
+    'elif': 'ELIF',
+    'else': 'ELSE',
+    'while': 'WHILE',
+    'for': 'FOR',
+    'return': 'RETURN',
+    'True': 'TRUE',
+    'False': 'FALSE',
+    'not': 'NOT',
+    'and': 'AND',
+    'or': 'OR'
+}
+        self.type_hints = {'int':'INT','float':'FLOAT','bool':'BOOL','str':'STRING'}
         self.DELIMITER ={';':'SEMICOLON',':' : 'COLON'}
         #tries
         self.op_trie = self.trie(self.operators)
         self.DELIMITER_trie = self.trie(self.DELIMITER)
+
         
         self.move_next()
 
@@ -123,14 +145,20 @@ class Lexer:
         else:
             yield (self.Token_Type['INT'], int(number_str))
 
-    def Identifiers_helper(self):
+    def Identifiers_keyword_helper(self):
         id_buffer = []
         while self.current_char is not None and (self.current_char.isalnum() or self.current_char == '_'):
             id_buffer.append(self.current_char)
             self.move_next()
 
         lexeme = "".join(id_buffer)
-        yield (self.Token_Type['IDENTIFIER'], lexeme)
+        if lexeme in self.keywords:
+            yield (self.Token_Type['KEYWORD'],self.keywords[lexeme])
+
+        elif lexeme in self.type_hints:
+            yield (self.Token_Type['TYPE_HINT'],self.type_hints[lexeme])
+        else:
+            yield (self.Token_Type['IDENTIFIER'], lexeme)
 
     def DELIMITER_helper(self):
         DELIMITER_buffer = []
@@ -169,9 +197,10 @@ class Lexer:
                 continue
 
             # 2. Match Static Operators
-            if self.current_char in self.operators:
+            elif self.current_char in self.operators:
                 yield from self.operator_helper()
                 continue
+
             # 3. Match Numbers (Optimized List Buffer)
             elif self.current_char.isdigit():
                 yield from self.number_helper()
@@ -179,7 +208,7 @@ class Lexer:
 
             # 4. Match Identifiers / Keywords (Allows alphanumeric variable tracking)
             elif self.current_char.isalpha() or self.current_char == '_':
-                yield from self.Identifiers_helper()
+                yield from self.Identifiers_keyword_helper()
                 continue
 
             # Fallback: Syntax Error Handling
