@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from sys import stdout
 from run_lang import run_langu
 
 class Main:
@@ -24,7 +25,7 @@ class Main:
     def run(self):
         while self.running:
             user_inputs = input('>>').strip() # the input will be GIVEN to the lexer after LEXING INTO TOKENS we print
-            run_langu(user_inputs)
+            stdout.write(f'{run_langu(user_inputs)}\n')
 
 def run():
     main = Main()
