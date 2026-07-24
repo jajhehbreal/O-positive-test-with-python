@@ -53,7 +53,7 @@ class Lexer:
     'or': 'OR'
 }
         self.type_hints = {'int':'INT','float':'FLOAT','bool':'BOOL','str':'STRING'}
-        self.DELIMITER ={';':'SEMICOLON',':' : 'COLON'}
+        self.DELIMITER ={';':'SEMICOLON',':' : 'COLON','(':'LEFT_PARENTHESIS',')': 'RIGHT_PARENTHESIS'}
         #tries
         self.op_trie = self.trie(self.operators)
         self.DELIMITER_trie = self.trie(self.DELIMITER)
@@ -181,8 +181,8 @@ class Lexer:
             self.current_char = self.source[self.index]
             DELIMITER_buffer.pop()
 
-        lexme = ''.join(DELIMITER_buffer)
-        yield (self.Token_Type['DELIMITER'],lexme)
+        lexeme = ''.join(DELIMITER_buffer)
+        yield (self.Token_Type['DELIMITER'],self.DELIMITER[lexeme])
 
     def tokenize(self): 
         
@@ -214,5 +214,3 @@ class Lexer:
             # Fallback: Syntax Error Handling
             raise SyntaxError(f"Illegal character detected in stream: '{self.current_char}'")
 
-    def __call__(self):
-        return self.tokenize()
