@@ -22,7 +22,7 @@ class Bin_Op_Node:
         self.LHS = LHS
         self.OP = OP
         self.RHS = RHS
-    
+
     def to_string_lines(self,depth =0):
         indentation:str = ' ' * depth
 
@@ -37,3 +37,34 @@ class Bin_Op_Node:
 
     def __repr__(self) -> str:
         return self.to_string()
+
+class UnaryOpNode:
+    __slots__ = ('OP', 'RHS')
+    def __init__(self, OP, RHS):
+        self.OP = OP
+        self.RHS = RHS
+
+    def to_string_lines(self, depth=0):
+        indentation = ' ' * depth
+        op = self.OP[1] if isinstance(self.OP, tuple) else self.OP
+        yield f"{indentation}UnaryOpNode('{op}'):"
+        yield from self.RHS.to_string_lines(depth + 1)
+
+    def __repr__(self) -> str:
+        return "\n".join(self.to_string_lines())
+
+class NumberNode:
+    __slots__ = ('value',)
+    def __init__(self, value):
+        self.value = value
+
+    def to_string_lines(self, depth=0):
+        yield f"{' ' * depth}NumberNode({self.value})"
+
+    def __repr__(self) -> str:
+        return "\n".join(self.to_string_lines())
+
+class EmptyTupleNode:
+
+    def __repr__(self) -> str:
+        return 'EMPTY_TUPLE'
