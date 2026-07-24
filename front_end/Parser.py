@@ -17,8 +17,10 @@
 
 class Pratt_Parser:
 
-    Binding_Power = {'PLUS': 10,'MINUS': 10,
-                    'MULTIPLY': 20,'DIVIDE': 20,'FLOOR_DIVIDE': 20}
+    Binding_Power = {'LEFT_PARENTHESIS': 0,'RIGHT_PARENTHESIS': 0,
+                    'PLUS': 10,'MINUS': 10,
+                    'MULTIPLY': 20,'DIVIDE': 20,'FLOOR_DIVIDE': 20
+                    }
 
     def __init__(self,token_stream) -> None:
         self.token = list(token_stream)
@@ -43,24 +45,45 @@ class Pratt_Parser:
     def expression(self, min_bp):
 
         token = self.peek_token
+        value = None
         if token is None:
             raise SyntaxError("Unexpected end of input while parsing expression")
 
-        match  token:
+        match token:
 
             case ('INT', value) | ('FLOAT', value):
                 self.next_token()
                 left = value
 
-            case ('OP','('):
+            case ('OP','MINUS'):
+                self.next_token()
+                right = self.expression(11)
+                left = ('NEGATE',right)
+
+            case ('OP','PLUS'):
 
                 self.next_token()
-                left = self.expression(0)
-                if self.peek_token and self.peek_token == ('OP',')'):
-                    self.next_token()
+                left = self.expression(11) # returns the org number
 
+            case ('DELIMITER', 'LEFT_PARENTHESIS'):
+                self.next_token()  # consume '('
+
+                # Handle empty parentheses: ()
+                if self.peek_token and self.peek_token == ('DELIMITER', 'RIGHT_PARENTHESIS'):
+                    self.next_token()  # consume ')'
+                    left = ('EMPTY_TUPLE')
                 else:
-                    raise SyntaxError("Expected ')'")
+                    # Parse the inside using the binding power of LEFT_PARENTHESIS (which is 0)
+                    left = self.expression(0)
+
+                    # Expect the closing ')'
+                    if self.peek_token and self.peek_token == ('DELIMITER', 'RIGHT_PARENTHESIS'):
+                        self.next_token()  # consume ')'
+                    else:
+                        raise SyntaxError("Expected ')'")
+                    
+            case ('DELIMITER', 'RIGHT_PARENTHESIS'):
+                raise SyntaxError("Unexpected ')'")
             case _:
                 raise SyntaxError(f"Unexpected token: {token}")
 
