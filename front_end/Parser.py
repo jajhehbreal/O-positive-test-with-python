@@ -15,12 +15,16 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
+from front_end.NODE import *
+
 class Pratt_Parser:
 
     Binding_Power = {'LEFT_PARENTHESIS': 0,'RIGHT_PARENTHESIS': 0,
                     'PLUS': 10,'MINUS': 10,
                     'MULTIPLY': 20,'DIVIDE': 20,'FLOOR_DIVIDE': 20
                     }
+
+    __slots__ = ('token','index','peek_token')
 
     def __init__(self,token_stream) -> None:
         self.token = list(token_stream)
@@ -53,12 +57,12 @@ class Pratt_Parser:
 
             case ('INT', value) | ('FLOAT', value):
                 self.next_token()
-                left = value
+                left = NumberNode(value=value)
 
             case ('OP','MINUS'):
                 self.next_token()
                 right = self.expression(11)
-                left = ('NEGATE',right)
+                left = UnaryOpNode('NEGATE',right)
 
             case ('OP','PLUS'):
 
@@ -71,7 +75,7 @@ class Pratt_Parser:
                 # Handle empty parentheses: ()
                 if self.peek_token and self.peek_token == ('DELIMITER', 'RIGHT_PARENTHESIS'):
                     self.next_token()  # consume ')'
-                    left = ('EMPTY_TUPLE')
+                    left = EmptyTupleNode()
                 else:
                     # Parse the inside using the binding power of LEFT_PARENTHESIS (which is 0)
                     left = self.expression(0)
@@ -96,6 +100,6 @@ class Pratt_Parser:
 
             right = self.expression(self.Binding_Power[op] + 1)
 
-            left = (op, left, right)
+            left = Bin_Op_Node(left,op,right)
         
         return left
