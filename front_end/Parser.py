@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
+
 from front_end.NODE import *
 
 class Pratt_Parser:
@@ -44,7 +45,12 @@ class Pratt_Parser:
 
     def parse(self):
         """Start parsing expressions with binding power 0."""
-        return self.expression(0)
+        result = self.expression(0)
+
+        if self.peek_token is not None:
+            raise SyntaxError(f"Unexpected token after expression: {self.peek_token}")
+
+        return result
 
     def expression(self, min_bp):
 
@@ -59,10 +65,14 @@ class Pratt_Parser:
                 self.next_token()
                 left = NumberNode(value=value)
 
+            case ('KEYWORD',value):
+                self.next_token()
+                left = KeywrodNode(value=value)
+
             case ('OP','MINUS'):
                 self.next_token()
                 right = self.expression(11)
-                left = UnaryOpNode('NEGATE',right)
+                left = UnaryOpNode(OP = 'NEGATE',RHS =right)
 
             case ('OP','PLUS'):
 
@@ -100,6 +110,6 @@ class Pratt_Parser:
 
             right = self.expression(self.Binding_Power[op] + 1)
 
-            left = Bin_Op_Node(left,op,right)
+            left = Bin_Op_Node(LHS = left,OP = op,RHS =right)
         
         return left
