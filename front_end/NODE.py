@@ -14,17 +14,18 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-class Bin_Op_Node:
-
-    __slots__ = ('LHS','RHS','OP')
-
-    def __init__(self,LHS,OP,RHS) -> None:
-        self.LHS = LHS
+class Node:
+    __slots__ = ('value','OP','LHS','RHS')
+    def __init__(self,value=None,OP =None,LHS = None,RHS = None) -> None:
+        self.value = value
         self.OP = OP
+        self.LHS = LHS
         self.RHS = RHS
 
+class Bin_Op_Node(Node):
+
     def to_string_lines(self,depth =0):
-        indentation:str = ' ' * depth
+        indentation:str = '    ' * depth
 
         op = self.OP[1] if isinstance(self.OP, tuple) else self.OP
 
@@ -38,14 +39,10 @@ class Bin_Op_Node:
     def __repr__(self) -> str:
         return self.to_string()
 
-class UnaryOpNode:
-    __slots__ = ('OP', 'RHS')
-    def __init__(self, OP, RHS):
-        self.OP = OP
-        self.RHS = RHS
+class UnaryOpNode(Node):
 
     def to_string_lines(self, depth=0):
-        indentation = ' ' * depth
+        indentation = '    ' * depth
         op = self.OP[1] if isinstance(self.OP, tuple) else self.OP
         yield f"{indentation}UnaryOpNode('{op}'):"
         yield from self.RHS.to_string_lines(depth + 1)
@@ -53,16 +50,32 @@ class UnaryOpNode:
     def __repr__(self) -> str:
         return "\n".join(self.to_string_lines())
 
-class NumberNode:
-    __slots__ = ('value',)
-    def __init__(self, value):
-        self.value = value
+class NumberNode(Node):
 
     def to_string_lines(self, depth=0):
-        yield f"{' ' * depth}NumberNode({self.value})"
+        yield f"{'    ' * depth}NumberNode({self.value})"
 
     def __repr__(self) -> str:
         return "\n".join(self.to_string_lines())
+
+class KeywrodNode(Node):
+    def to_string_lines(self,depth=0):
+        yield f"{'    ' * depth}KeywordNode({self.value})"
+
+    def __repr__(self) -> str:
+        return '\n'.join(self.to_string_lines())
+
+class DelimiterNode(Node):
+
+    def to_string_lines(self,depth=0):
+        yield f"{'    ' * depth}DelimiterNode({self.value})"
+
+class EmptyTupleNode:
+
+    def to_string_lines(self,depth =0):
+        yield f"{'    ' * depth}EmptyTupleNode(EMPTY_TUPLE)"
+    def __repr__(self) -> str:
+        return '\n'.join(self.to_string_lines())
 
 class EmptyTupleNode:
 
