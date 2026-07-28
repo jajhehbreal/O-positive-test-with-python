@@ -27,8 +27,7 @@ class Lexer:
     'IDENTIFIER': 'IDENTIFIER',
     'DELIMITER': 'DELIMITER',
     'KEYWORD': 'KEYWORD',
-    'TYPE_HINT': 'TYPE',
-    'SPACE': 'SPACE'
+    'TYPE_HINT': 'TYPE'
 }
     keywords = {
     'var': 'VAR',
@@ -59,7 +58,8 @@ class Lexer:
     "'": 'SINGLE_QUOTATION',
     '.': 'DOT'
 }
-    SINGLE_OPS = {'+': 'PLUS',
+    SINGLE_OPS = {
+    '+': 'PLUS',
     '-': 'MINUS',
     '*': 'MULTIPLY',
     '/': 'DIVIDE',
@@ -71,11 +71,12 @@ class Lexer:
 }
     END = {'eof':'EOF','error':'ERROR'}
 
+    __slots__ = ('len','index','source','current_char','ALL_OPS','op_trie','jump_table')
     def __init__(self,source:str):
         self.source:str = source
-        self.index:int = -1
+        self.index:int = -1 # think of this like the program counter
         self.len = len(source)
-        self.current_char = source[0] if len(source) > 0 else None
+        self.current_char = source[0] if len(source) > 0 else None  # think of this like cpu registors
 
         #merge and trie
         self.ALL_OPS = {**self.SINGLE_OPS, **self.MULTI_OPS}
@@ -83,6 +84,7 @@ class Lexer:
 
         self.jump_table = self.build_256_jump_table()
         self.next_token()
+
     def next_token(self,step = 1):
         self.index += step
         self.current_char = self.source[self.index] if self.index < self.len else None
@@ -107,7 +109,7 @@ class Lexer:
         for char in ' \t\r\n':
             jump_table[ord(char)] = self.handle_white_space
 
-        for op in self.SINGLE_OPS.keys():
+        for op in self.SINGLE_OPS.keys(): # for op
             jump_table[ord(op)] = self.handle_op
 
         for byte in range(48, 58):
@@ -133,7 +135,7 @@ class Lexer:
     def handle_white_space(self):
         while self.current_char is not None and self.current_char in ' \t\r\n':
             self.next_token()
-        yield (self.Token_Type['SPACE'],'')
+            continue
 
     def handle_op(self) -> Generator[tuple[str,str]]:
         start = self.index # save the start value
@@ -141,11 +143,13 @@ class Lexer:
         last_valid_type = None
         last_valid_index = start # keep track for both of the vailds as we need to back track
 
-        while self.current_char is not None and self.current_char in node:
+        while self.index < self.len:
             char = self.current_char # save a instance of the current char like how CPU puts stuff from registors into L1 cache
+            if char not in node:
+                break
             node = node[char]
 
-                    # Check if we have reached a valid token (end marker)
+            # Check if we have reached a valid token (end marker)
             if '_end' in node:
                 last_valid_type = node['_end']
                 last_valid_index = self.index + 1  # Mark where this token ends
@@ -160,8 +164,7 @@ class Lexer:
 
             # rewind index 
             self.index = last_valid_index
-
-            # Update current_char to the next character after the token
+            # reassing the curret char
             self.current_char = self.source[self.index] if self.index < self.len else None
 
             yield (self.Token_Type['OP'],last_valid_type)
@@ -169,7 +172,7 @@ class Lexer:
             # no valid operator matched (shouldn't happen since jump table routed it here)
             raise SyntaxError(f'Invalid operator sequence "{self.source[start]}"')
 
-    def handle_numbers(self):
+    def handle_numbers(self) -> Generator[tuple[str,int|float]]:
         start = self.index
         is_float = False
         #INT's
@@ -264,7 +267,10 @@ class Lexer:
     """===Main loop==="""
     
     def tokenize(self):
-        while self.current_char is not None:
+        while self.current_char is not None and self.index < self.len:
+            self.source[self.index] if self.index < self.len else None
+            if self.current_char is None:
+                break
             try:
                 byte = ord(self.current_char)
                 if byte > 255:
@@ -276,4 +282,4 @@ class Lexer:
                 continue
             except:
                 raise SyntaxError(f'INVALID CHARACTER USED: {self.current_char}')
-        yield (self.END['eof'], None) 
+        yield (self.END['eof'], None)
