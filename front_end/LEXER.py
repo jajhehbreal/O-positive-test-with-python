@@ -14,29 +14,23 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-class Lexer:
-    __slots__ = ('index', 'source', 'current_char','Token_Type', 'operators',
-                'op_trie','DELIMITER','DELIMITER_trie','keywords','type_hints')
+from typing import Generator
+from fastnumbers import fast_float,fast_int
 
-    def __init__(self, source_code: str) -> None:
-        self.source:str = source_code
-        self.index:int = -1
-        self.current_char = None
-        self.Token_Type = {
+class Lexer:
+
+    Token_Type = {
     'INT': 'INT',
     'FLOAT': 'FLOAT',
+    'STR': 'STRING',
     'OP': 'OP',
     'IDENTIFIER': 'IDENTIFIER',
     'DELIMITER': 'DELIMITER',
     'KEYWORD': 'KEYWORD',
-    'TYPE_HINT': 'TYPE'
+    'TYPE_HINT': 'TYPE',
+    'SPACE': 'SPACE'
 }
-        
-        # Pre allocated syntax registries
-        self.operators = {'+': 'PLUS', '-': 'MINUS', '*': 'MULTIPLY', '/': 'DIVIDE','//': 'FLOOR_DIVIDE',
-                        '=': 'ASSIGN','!': 'NOT','!=': 'NOT_EQUAL'}
-
-        self.keywords = {
+    keywords = {
     'var': 'VAR',
     'const': 'CONST',
     'def': 'DEF',
@@ -51,166 +45,235 @@ class Lexer:
     'not': 'NOT',
     'and': 'AND',
     'or': 'OR'
+}   
+    type_hints = {'int':'INT',
+    'float':'FLOAT',
+    'bool':'BOOL',
+    'str':'STRING'
 }
-        self.type_hints = {'int':'INT','float':'FLOAT','bool':'BOOL','str':'STRING'}
-        self.DELIMITER ={';':'SEMICOLON',':' : 'COLON','(':'LEFT_PARENTHESIS',')': 'RIGHT_PARENTHESIS'}
-        #tries
-        self.op_trie = self.trie(self.operators)
-        self.DELIMITER_trie = self.trie(self.DELIMITER)
+    DELIMITER ={';':'SEMICOLON',
+    ':' : 'COLON',
+    '(':'LEFT_PARENTHESIS',
+    ')': 'RIGHT_PARENTHESIS',
+    '"':'DOUBLE_QUOTATION',
+    "'": 'SINGLE_QUOTATION',
+    '.': 'DOT'
+}
+    SINGLE_OPS = {'+': 'PLUS',
+    '-': 'MINUS',
+    '*': 'MULTIPLY',
+    '/': 'DIVIDE',
+    '=': 'ASSIGN',
+    '!': 'NOT'
+}
+    MULTI_OPS  = {'//': 'FLOOR_DIVIDE',
+    '!=': 'NOT_EQUAL'
+}
+    END = {'eof':'EOF','error':'ERROR'}
 
-        
-        self.move_next()
+    def __init__(self,source:str):
+        self.source:str = source
+        self.index:int = -1
+        self.len = len(source)
+        self.current_char = source[0] if len(source) > 0 else None
 
-    def trie(self,dicts:dict) -> dict:
-        tries = {}
-        for _types in dicts:
-            node = tries
-            for char in _types:
-                if char not in node:
+        #merge and trie
+        self.ALL_OPS = {**self.SINGLE_OPS, **self.MULTI_OPS}
+        self.op_trie = self.trie(self.ALL_OPS)
+
+        self.jump_table = self.build_256_jump_table()
+        self.next_token()
+    def next_token(self,step = 1):
+        self.index += step
+        self.current_char = self.source[self.index] if self.index < self.len else None
+
+    """===build==="""
+    @staticmethod
+    def trie(dicts:dict) -> dict:
+        root ={} # this i will be the root
+        for key in dicts:
+            node = root
+            for char in key:
+                if char not in node: # see if this is already in side the root
                     node[char] = {}
                 node = node[char]
-            node['_end'] = _types
+            node['_end'] = dicts[key]
+        return root
 
-        return tries
+    def build_256_jump_table(self):
+        # Use self.XXX to get bound methods
+        jump_table = [self.handle_invaild] * 256
 
-    def move_next(self) -> None:
-        self.index += 1
-        self.current_char = self.source[self.index] if self.index < len(self.source) else None
+        for char in ' \t\r\n':
+            jump_table[ord(char)] = self.handle_white_space
 
-    def operator_helper(self):
-        OP_Buffer = []
-        node = self.op_trie # local var
-        last_valid_len = 0
+        for op in self.SINGLE_OPS.keys():
+            jump_table[ord(op)] = self.handle_op
 
-        while self.current_char is not None and self.current_char in node:
-            node = node[self.current_char]
-            OP_Buffer.append(self.current_char)
-            self.move_next()
+        for byte in range(48, 58):
+            jump_table[byte] = self.handle_numbers
 
-            if '_end' in node:
-                last_valid_len = len(OP_Buffer)
+        for byte in list(range(65, 91)) + [95] + list(range(97, 123)):
+            jump_table[byte] = self.handle_ident_keyword_typehints
 
-        if last_valid_len == 0:
-            start_idx = max(0, self.index - len(OP_Buffer))
-            raise SyntaxError(f"Invalid operator sequence starting with '{self.source[start_idx]}'")
+        for delim in self.DELIMITER.keys():
+            jump_table[ord(delim)] = self.handle_delimiter
 
-        while len(OP_Buffer) > last_valid_len:
-            self.index -= 1
-            self.current_char = self.source[self.index]
-            OP_Buffer.pop()
+        jump_table[ord('"')] = self.handle_strings
+        jump_table[ord("'")] = self.handle_strings
 
-        lexeme = "".join(OP_Buffer)
+        return jump_table
 
-        yield (self.Token_Type['OP'], self.operators[lexeme])
+    """===handlers==="""
 
-    def number_helper(self):
-        num_buffer = []
-        is_float = False
+    def handle_invaild(self) -> Generator[tuple[str,str|None]]:
+        yield (self.END['error'],self.current_char) # yield only stops the program for a moment not end it like return
+        self.next_token() # sooooo we can do this and its the parsers job to raise a error we only send a error token
 
-        while self.current_char is not None and self.current_char.isdigit():
-            num_buffer.append(self.current_char)
-            self.move_next()
+    def handle_white_space(self):
+        while self.current_char is not None and self.current_char in ' \t\r\n':
+            self.next_token()
+        yield (self.Token_Type['SPACE'],'')
 
-        if self.current_char == '.':
-            is_float = True
-            num_buffer.append('.')
-            self.move_next()
-
-            if not self.current_char or not self.current_char.isdigit():
-                raise SyntaxError("Invalid float: expected digits after decimal point")
-                
-            while self.current_char is not None and self.current_char.isdigit():
-                num_buffer.append(self.current_char)
-                self.move_next()
-
-        if self.current_char in ('e','E'):
-            is_float = True
-            num_buffer.append(self.current_char) # store
-            self.move_next() # eat
-            
-            if self.current_char in ('+','-'):
-                num_buffer.append(self.current_char) #store
-                self.move_next() # eat
-
-            if not self.current_char or not self.current_char.isdigit():
-                raise SyntaxError("Invalid exponent: expected digits")
-            
-            while self.current_char is not None and self.current_char.isdigit():
-                num_buffer.append(self.current_char) # store
-                self.move_next() # eat
-
-        number_str = ''.join(num_buffer)
-        if is_float:
-            yield (self.Token_Type['FLOAT'], float(number_str))
-        else:
-            yield (self.Token_Type['INT'], int(number_str))
-
-    def Identifiers_keyword_helper(self):
-        id_buffer = []
-        while self.current_char is not None and (self.current_char.isalnum() or self.current_char == '_'):
-            id_buffer.append(self.current_char)
-            self.move_next()
-
-        lexeme = "".join(id_buffer)
-        if lexeme in self.keywords:
-            yield (self.Token_Type['KEYWORD'],self.keywords[lexeme])
-
-        elif lexeme in self.type_hints:
-            yield (self.Token_Type['TYPE_HINT'],self.type_hints[lexeme])
-        else:
-            yield (self.Token_Type['IDENTIFIER'], lexeme)
-
-    def DELIMITER_helper(self):
-        DELIMITER_buffer = []
-        node = self.DELIMITER_trie
-        last_valid_DELIMITER = 0
+    def handle_op(self) -> Generator[tuple[str,str]]:
+        start = self.index # save the start value
+        node = self.op_trie
+        last_valid_type = None
+        last_valid_index = start # keep track for both of the vailds as we need to back track
 
         while self.current_char is not None and self.current_char in node:
-            node = node[self.current_char]
-            DELIMITER_buffer.append(self.current_char) # store
-            self.move_next() # eat
+            char = self.current_char # save a instance of the current char like how CPU puts stuff from registors into L1 cache
+            node = node[char]
 
+                    # Check if we have reached a valid token (end marker)
             if '_end' in node:
-                last_valid_DELIMITER = len(DELIMITER_buffer)
-
-        if last_valid_DELIMITER == 0:
-            raise SyntaxError(f"Invalid DELIMITER sequence starting with '{self.source[self.index - len(DELIMITER_buffer)]}'")
-
-        while len(DELIMITER_buffer) > last_valid_DELIMITER:
-            self.index -= 1
-            self.current_char = self.source[self.index]
-            DELIMITER_buffer.pop()
-
-        lexeme = ''.join(DELIMITER_buffer)
-        yield (self.Token_Type['DELIMITER'],self.DELIMITER[lexeme])
-
-    def tokenize(self): 
+                last_valid_type = node['_end']
+                last_valid_index = self.index + 1  # Mark where this token ends
         
+            self.index += 1
+
+        # If we found a valid operator
+        
+        if last_valid_type is not None:
+            # eat the char we already passed
+            # track back if needed aka rewrite the index as tires only allow for vaild paths
+
+            # rewind index 
+            self.index = last_valid_index
+
+            # Update current_char to the next character after the token
+            self.current_char = self.source[self.index] if self.index < self.len else None
+
+            yield (self.Token_Type['OP'],last_valid_type)
+        else:
+            # no valid operator matched (shouldn't happen since jump table routed it here)
+            raise SyntaxError(f'Invalid operator sequence "{self.source[start]}"')
+
+    def handle_numbers(self):
+        start = self.index
+        is_float = False
+        #INT's
+        while self.current_char is not None and self.current_char.isdigit():
+            self.next_token()
+
+        # FLOAT's
+
+        if self.current_char == '.': # if we find a dot after a int we mark it as a float
+            is_float = True
+            self.next_token() # eat the next char
+            if self.current_char is None or not self.current_char.isdigit(): # if there are no whole numbers after a dot we raise a error
+                raise SyntaxError("Invalid float: expected digits after decimal") # ERROR msg
+            
+            else:
+                while self.current_char is not None and self.current_char.isdigit(): # we start the while loop until the conditon is false
+                    self.next_token()
+        # for big numbers
+        if self.current_char in ('e','E'): # nice to have ig?
+            is_float = True
+            self.next_token() # eat the char
+            if self.current_char in ('+','-'):
+                self.next_token()
+            elif self.current_char is None or not self.current_char.isdigit():
+                raise SyntaxError("Invalid exponent: expected digits")
+            else:
+                while self.current_char is not None and self.current_char.isdigit():
+                    self.next_token()
+
+        num_group = self.source[start:self.index] # group them at one place by using slicing the start is well the start var and the current index is the end with everything in between thats why we have :
+
+        if is_float:
+            yield (self.Token_Type['FLOAT'],fast_float(num_group))
+        else:
+            yield (self.Token_Type['INT'],fast_int(num_group))
+
+    def handle_strings(self):
+        char = self.current_char # save the ' or "
+        self.next_token() # eat
+        result = []
+
+        while self.current_char is not None and char in ('"',"'"):
+            self.next_token()
+
+            if self.current_char == '\\':
+                self.next_token()  # consume the backslash
+                if self.current_char is None:
+                    raise SyntaxError("Unterminated escape sequence")
+
+                elif self.current_char == 'n':
+                    result.append('\n')
+                elif self.current_char == 't':
+                    result.append('\t')
+                elif self.current_char == 'r':
+                    result.append('\r')
+                elif self.current_char == '\\':
+                    result.append('\\')
+                elif self.current_char == char:
+                    # Escaped quote (e.g., \' or \")
+                    result.append(char)
+                else:
+                    # If it's an unknown escape, we just keep the backslash and the char
+                    result.append('\\')
+                    result.append(self.current_char)
+            elif  self.current_char == char:
+                self.next_token()  # consume the closing quote
+                yield (self.Token_Type['STR'], ''.join(result))
+
+            else:
+                result.append(self.current_char)
+                self.next_token()
+                
+
+
+    def handle_ident_keyword_typehints(self) -> Generator[tuple[str,str]]:
+        start = self.index
+        while self.current_char is not None and (self.current_char.isalnum() or self.current_char == '_'):
+            self.next_token()
+        word = self.source[start:self.index] # slice into group
+
+        if word in self.keywords:
+            yield (self.Token_Type['KEYWORD'], self.keywords[word])
+        elif word in self.type_hints:
+            yield (self.Token_Type['TYPE_HINT'], self.type_hints[word])
+        else:
+            yield (self.Token_Type['IDENTIFIER'], word)
+
+    def handle_delimiter(self):
+        delim = self.DELIMITER[self.current_char]
+        self.next_token()  # <-- MOVE BEFORE YIELD
+        yield (self.Token_Type['DELIMITER'], delim)
+    """===Main loop==="""
+    
+    def tokenize(self):
         while self.current_char is not None:
-            # 1. Skip Whitespace
-            if self.current_char in ' \t\n\r':
-                self.move_next()
+            try:
+                byte = ord(self.current_char)
+                if byte > 255:
+                    raise SyntaxError(f'INVALID CHARACTER USED: {self.current_char}')
+                handler = self.jump_table[byte]
+                token = handler()
+                if token:
+                    yield from token
                 continue
-
-            elif self.current_char in self.DELIMITER:
-                yield from self.DELIMITER_helper()
-                continue
-
-            # 2. Match Static Operators
-            elif self.current_char in self.operators:
-                yield from self.operator_helper()
-                continue
-
-            # 3. Match Numbers (Optimized List Buffer)
-            elif self.current_char.isdigit():
-                yield from self.number_helper()
-                continue
-
-            # 4. Match Identifiers / Keywords (Allows alphanumeric variable tracking)
-            elif self.current_char.isalpha() or self.current_char == '_':
-                yield from self.Identifiers_keyword_helper()
-                continue
-
-            # Fallback: Syntax Error Handling
-            raise SyntaxError(f"Illegal character detected in stream: '{self.current_char}'")
-
+            except:
+                raise SyntaxError(f'INVALID CHARACTER USED: {self.current_char}')
+        yield (self.END['eof'], None) 
