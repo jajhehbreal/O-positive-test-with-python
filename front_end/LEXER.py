@@ -140,7 +140,7 @@ class Lexer:
         if candidates is not None:
             for cand in candidates:
                 end = self.index + len(cand)
-                if end <= self.lenght and self.source[self.index:end] == cand:
+                if end <= self.length and self.source[self.index:end] == cand:
                     self.next_token(step=len(cand))
                     yield (self.Token_Type['OP'], self.ALL_OPS[cand])
                     return # keep return or the func will not end
