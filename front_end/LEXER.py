@@ -71,45 +71,40 @@ class Lexer:
 }
     END = {'eof':'EOF','error':'ERROR'}
 
-    __slots__ = ('len','index','source','current_char','ALL_OPS','op_trie','jump_table')
+    __slots__ = ('lenght','index','source','current_char','jump_table','multi_by_first','ALL_OPS')
     def __init__(self,source:str):
         self.source:str = source
         self.index:int = -1 # think of this like the program counter
-        self.len = len(source)
+        self.lenght = len(source)
         self.current_char = source[0] if len(source) > 0 else None  # think of this like cpu registors
 
-        #merge and trie
-        self.ALL_OPS = {**self.SINGLE_OPS, **self.MULTI_OPS}
-        self.op_trie = self.trie(self.ALL_OPS)
+        #for OP
+        self.multi_by_first: dict[str, list[str]] = {}
+        for op in self.MULTI_OPS:
+            self.multi_by_first.setdefault(op[0],[]).append(op)
+        for first in self.multi_by_first:
+            self.multi_by_first[first].sort(key=len,reverse=True)
+
+        self.ALL_OPS =  {**self.SINGLE_OPS, **self.MULTI_OPS}
 
         self.jump_table = self.build_256_jump_table()
         self.next_token()
 
     def next_token(self,step = 1):
         self.index += step
-        self.current_char = self.source[self.index] if self.index < self.len else None
+        self.current_char = self.source[self.index] if self.index < self.lenght else None
 
     """===build==="""
-    @staticmethod
-    def trie(dicts:dict) -> dict:
-        root ={} # this i will be the root
-        for key in dicts:
-            node = root
-            for char in key:
-                if char not in node: # see if this is already in side the root
-                    node[char] = {}
-                node = node[char]
-            node['_end'] = dicts[key]
-        return root
+
 
     def build_256_jump_table(self):
-        # Use self.XXX to get bound methods
+        # Use self.name to get bound methods
         jump_table = [self.handle_invaild] * 256
 
         for char in ' \t\r\n':
             jump_table[ord(char)] = self.handle_white_space
 
-        for op in self.SINGLE_OPS.keys(): # for op
+        for op in self.SINGLE_OPS.keys(): # for op only
             jump_table[ord(op)] = self.handle_op
 
         for byte in range(48, 58):
@@ -138,39 +133,26 @@ class Lexer:
             continue
 
     def handle_op(self) -> Generator[tuple[str,str]]:
-        start = self.index # save the start value
-        node = self.op_trie
-        last_valid_type = None
-        last_valid_index = start # keep track for both of the vailds as we need to back track
+        char = self.current_char
+        candidates = self.multi_by_first.get(char)
 
-        while self.index < self.len:
-            char = self.current_char # save a instance of the current char like how CPU puts stuff from registors into L1 cache
-            if char not in node:
-                break
-            node = node[char]
+        if candidates is not None:
+            for cand in candidates:
+                end = self.index + len(cand)
+                if end <= self.lenght and self.source[self.index:end] == cand:
+                    self.next_token(step=len(cand))
+                    yield (self.Token_Type['OP'], self.ALL_OPS[cand])
+                    break
 
-            # Check if we have reached a valid token (end marker)
-            if '_end' in node:
-                last_valid_type = node['_end']
-                last_valid_index = self.index + 1  # Mark where this token ends
-        
-            self.index += 1
-
-        # If we found a valid operator
-        
-        if last_valid_type is not None:
-            # eat the char we already passed
-            # track back if needed aka rewrite the index as tires only allow for vaild paths
-
-            # rewind index 
-            self.index = last_valid_index
-            # reassing the curret char
-            self.current_char = self.source[self.index] if self.index < self.len else None
-
-            yield (self.Token_Type['OP'],last_valid_type)
+        # 2. Fall back to single-character operator
+        if char in self.SINGLE_OPS:
+            self.next_token()  # consume the single char
+            yield (self.Token_Type['OP'], self.SINGLE_OPS[char])
         else:
-            # no valid operator matched (shouldn't happen since jump table routed it here)
-            raise SyntaxError(f'Invalid operator sequence "{self.source[start]}"')
+            # Shouldn't happen if jump table routed it here
+            raise SyntaxError(f"Invalid operator sequence: '{char}'")
+
+
 
     def handle_numbers(self) -> Generator[tuple[str,int|float]]:
         start = self.index
@@ -196,7 +178,7 @@ class Lexer:
             self.next_token() # eat the char
             if self.current_char in ('+','-'):
                 self.next_token()
-            elif self.current_char is None or not self.current_char.isdigit():
+            if self.current_char is None or not self.current_char.isdigit():
                 raise SyntaxError("Invalid exponent: expected digits")
             else:
                 while self.current_char is not None and self.current_char.isdigit():
@@ -210,41 +192,26 @@ class Lexer:
             yield (self.Token_Type['INT'],fast_int(num_group))
 
     def handle_strings(self):
-        char = self.current_char # save the ' or "
-        self.next_token() # eat
+        quote = self.current_char
+        self.next_token()
         result = []
 
-        while self.current_char is not None and char in ('"',"'"):
-            self.next_token()
-
+        while self.current_char is not None and self.current_char != quote:
             if self.current_char == '\\':
-                self.next_token()  # consume the backslash
+                self.next_token()
                 if self.current_char is None:
                     raise SyntaxError("Unterminated escape sequence")
-
-                elif self.current_char == 'n':
-                    result.append('\n')
-                elif self.current_char == 't':
-                    result.append('\t')
-                elif self.current_char == 'r':
-                    result.append('\r')
-                elif self.current_char == '\\':
-                    result.append('\\')
-                elif self.current_char == char:
-                    # Escaped quote (e.g., \' or \")
-                    result.append(char)
-                else:
-                    # If it's an unknown escape, we just keep the backslash and the char
-                    result.append('\\')
-                    result.append(self.current_char)
-            elif  self.current_char == char:
-                self.next_token()  # consume the closing quote
-                yield (self.Token_Type['STR'], ''.join(result))
-
+                escapes = {'n': '\n', 't': '\t', 'r': '\r', '\\': '\\', quote: quote}
+                result.append(escapes.get(self.current_char, self.current_char))
             else:
                 result.append(self.current_char)
-                self.next_token()
-                
+            self.next_token()  # uniform advance
+
+        if self.current_char != quote:
+            raise SyntaxError("Unterminated string literal")
+
+        self.next_token()  # eat closing quote
+        yield (self.Token_Type['STR'], ''.join(result))
 
 
     def handle_ident_keyword_typehints(self) -> Generator[tuple[str,str]]:
@@ -260,26 +227,19 @@ class Lexer:
         else:
             yield (self.Token_Type['IDENTIFIER'], word)
 
-    def handle_delimiter(self):
+    def handle_delimiter(self) -> Generator[tuple[str,str]]:
         delim = self.DELIMITER[self.current_char]
         self.next_token()  # <-- MOVE BEFORE YIELD
         yield (self.Token_Type['DELIMITER'], delim)
     """===Main loop==="""
     
-    def tokenize(self):
-        while self.current_char is not None and self.index < self.len:
-            self.source[self.index] if self.index < self.len else None
-            if self.current_char is None:
-                break
-            try:
-                byte = ord(self.current_char)
-                if byte > 255:
-                    raise SyntaxError(f'INVALID CHARACTER USED: {self.current_char}')
-                handler = self.jump_table[byte]
-                token = handler()
-                if token:
-                    yield from token
-                continue
-            except:
+    def tokenize(self) -> Generator:
+        while self.current_char is not None and self.index < self.lenght:
+            byte = ord(self.current_char)
+            if byte > 255: # ASCLL is 256 so if the number is bigger then 255 use a error
                 raise SyntaxError(f'INVALID CHARACTER USED: {self.current_char}')
+            handler = self.jump_table[byte]
+            token = handler()
+            if token:
+                yield from token
         yield (self.END['eof'], None)
