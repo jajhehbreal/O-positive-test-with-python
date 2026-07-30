@@ -13,7 +13,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 from typing import Generator
 from fastnumbers import fast_float,fast_int
 
@@ -71,21 +70,20 @@ class Lexer:
 }
     END = {'eof':'EOF','error':'ERROR'}
 
-    __slots__ = ('length','index','source','current_char','jump_table','multi_by_first','ALL_OPS')
+    multi_by_first: dict[str, list[str]] = {}
+    for op in MULTI_OPS:
+        multi_by_first.setdefault(op[0],[]).append(op)
+    for first in multi_by_first:
+        multi_by_first[first].sort(key=len,reverse=True)
+
+    ALL_OPS =  {**SINGLE_OPS,**MULTI_OPS}
+
+    __slots__ = ('length','index','source','current_char','jump_table')
     def __init__(self,source:str):
         self.source:str = source
         self.index:int = -1 # think of this like the program counter
         self.length = len(source)
         self.current_char = None  # think of this like cpu registors
-
-        #for OP
-        self.multi_by_first: dict[str, list[str]] = {}
-        for op in self.MULTI_OPS:
-            self.multi_by_first.setdefault(op[0],[]).append(op)
-        for first in self.multi_by_first:
-            self.multi_by_first[first].sort(key=len,reverse=True)
-
-        self.ALL_OPS =  {**self.SINGLE_OPS, **self.MULTI_OPS}
 
         self.jump_table = self.build_256_jump_table()
         self.next_token()
