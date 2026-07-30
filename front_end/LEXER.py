@@ -22,7 +22,7 @@ class Lexer:
     Token_Type = {
     'INT': 'INT',
     'FLOAT': 'FLOAT',
-    'STR': 'STRING',
+    'STR': 'STR',
     'OP': 'OP',
     'IDENTIFIER': 'IDENTIFIER',
     'DELIMITER': 'DELIMITER',
@@ -71,12 +71,12 @@ class Lexer:
 }
     END = {'eof':'EOF','error':'ERROR'}
 
-    __slots__ = ('lenght','index','source','current_char','jump_table','multi_by_first','ALL_OPS')
+    __slots__ = ('length','index','source','current_char','jump_table','multi_by_first','ALL_OPS')
     def __init__(self,source:str):
         self.source:str = source
         self.index:int = -1 # think of this like the program counter
-        self.lenght = len(source)
-        self.current_char = source[0] if len(source) > 0 else None  # think of this like cpu registors
+        self.length = len(source)
+        self.current_char = None  # think of this like cpu registors
 
         #for OP
         self.multi_by_first: dict[str, list[str]] = {}
@@ -92,14 +92,14 @@ class Lexer:
 
     def next_token(self,step = 1):
         self.index += step
-        self.current_char = self.source[self.index] if self.index < self.lenght else None
+        self.current_char = self.source[self.index] if self.index < self.length else None
 
     """===build==="""
 
 
     def build_256_jump_table(self):
         # Use self.name to get bound methods
-        jump_table = [self.handle_invaild] * 256
+        jump_table = [self.handle_invalid] * 256
 
         for char in ' \t\r\n':
             jump_table[ord(char)] = self.handle_white_space
@@ -123,9 +123,10 @@ class Lexer:
 
     """===handlers==="""
 
-    def handle_invaild(self) -> Generator[tuple[str,str|None]]:
-        yield (self.END['error'],self.current_char) # yield only stops the program for a moment not end it like return
-        self.next_token() # sooooo we can do this and its the parsers job to raise a error we only send a error token
+    def handle_invalid(self) -> Generator[tuple[str,str|None]]:
+        char = self.current_char # like L1 cache
+        self.next_token()
+        yield (self.END['error'],char)
 
     def handle_white_space(self):
         while self.current_char is not None and self.current_char in ' \t\r\n':
@@ -133,7 +134,7 @@ class Lexer:
             continue
 
     def handle_op(self) -> Generator[tuple[str,str]]:
-        char = self.current_char
+        char = self.current_char # save the instance of the current char like L1 cache
         candidates = self.multi_by_first.get(char)
 
         if candidates is not None:
@@ -234,7 +235,7 @@ class Lexer:
     """===Main loop==="""
     
     def tokenize(self) -> Generator:
-        while self.current_char is not None and self.index < self.lenght:
+        while self.current_char is not None and self.index < self.length:
             byte = ord(self.current_char)
             if byte > 255: # ASCLL is 256 so if the number is bigger then 255 use a error
                 raise SyntaxError(f'INVALID CHARACTER USED: {self.current_char}')
