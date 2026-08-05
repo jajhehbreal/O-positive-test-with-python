@@ -13,6 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 from typing import Generator
 from fastnumbers import fast_float,fast_int
 
@@ -31,15 +32,15 @@ class Lexer:
     keywords = {
     'var': 'VAR',
     'const': 'CONST',
-    'def': 'DEF',
+    'func': 'FUNC',
     'if': 'IF',
     'elif': 'ELIF',
     'else': 'ELSE',
     'while': 'WHILE',
     'for': 'FOR',
     'return': 'RETURN',
-    'True': 'TRUE',
-    'False': 'FALSE',
+    'true': 'TRUE',
+    'false': 'FALSE',
     'not': 'NOT',
     'and': 'AND',
     'or': 'OR'
@@ -53,10 +54,12 @@ class Lexer:
     ':' : 'COLON',
     '(':'LEFT_PARENTHESIS',
     ')': 'RIGHT_PARENTHESIS',
-    '"':'DOUBLE_QUOTATION',
-    "'": 'SINGLE_QUOTATION',
+    '{': 'OPEN_CURLY_BRACKET',
+    '}': 'CLOSE_CURLY_BRACKET',
     '.': 'DOT'
 }
+    STRING_QUOTATION = {'"':'DOUBLE_QUOTATION',
+    "'": 'SINGLE_QUOTATION',}
     SINGLE_OPS = {
     '+': 'PLUS',
     '-': 'MINUS',
@@ -78,22 +81,32 @@ class Lexer:
 
     ALL_OPS =  {**SINGLE_OPS,**MULTI_OPS}
 
-    __slots__ = ('length','index','source','current_char','jump_table')
+    __slots__ = ('length','index','source','current_char','jump_table', 'line', 'col')
     def __init__(self,source:str):
         self.source:str = source
         self.index:int = -1 # think of this like the program counter
         self.length = len(source)
         self.current_char = None  # think of this like cpu registors
 
+        self.line = 1
+        self.col = 1
+
         self.jump_table = self.build_256_jump_table()
         self.next_token()
 
-    def next_token(self,step = 1):
+    def next_token(self,step:int = 1):
+
+        for _ in range(step):
+            if self.current_char == '\n':
+                self.line += 1
+                self.col = 1
+            else:
+                self.col += 1
+
         self.index += step
         self.current_char = self.source[self.index] if self.index < self.length else None
 
     """===build==="""
-
 
     def build_256_jump_table(self):
         # Use self.name to get bound methods
@@ -114,25 +127,26 @@ class Lexer:
         for delim in self.DELIMITER.keys():
             jump_table[ord(delim)] = self.handle_delimiter
 
-        jump_table[ord('"')] = self.handle_strings
-        jump_table[ord("'")] = self.handle_strings
+        for quatation in self.STRING_QUOTATION.keys():
+            jump_table[ord(quatation)] = self. handle_strings
 
         return jump_table
 
     """===handlers==="""
 
-    def handle_invalid(self) -> Generator[tuple[str,str|None]]:
-        char = self.current_char # like L1 cache
+    def handle_invalid(self) -> Generator[tuple]:
+        char,line,col = self.current_char, self.line, self.col # like L1 cache
         self.next_token()
-        yield (self.END['error'],char)
+        yield (self.END['error'],char, line,col)
 
-    def handle_white_space(self):
+    def handle_white_space(self) -> None:
         while self.current_char is not None and self.current_char in ' \t\r\n':
             self.next_token()
             continue
 
-    def handle_op(self) -> Generator[tuple[str,str]]:
+    def handle_op(self) -> Generator[tuple[str,str,int,int]]:
         char = self.current_char # save the instance of the current char like L1 cache
+        start_col,start_line = self.col, self.line
         candidates = self.multi_by_first.get(char)
 
         if candidates is not None:
@@ -140,21 +154,21 @@ class Lexer:
                 end = self.index + len(cand)
                 if end <= self.length and self.source[self.index:end] == cand:
                     self.next_token(step=len(cand))
-                    yield (self.Token_Type['OP'], self.ALL_OPS[cand])
+                    yield (self.Token_Type['OP'], self.ALL_OPS[cand], start_line, start_col)
                     return # keep return or the func will not end
 
         # 2. Fall back to single-character operator
         if char in self.SINGLE_OPS:
             self.next_token()  # consume the single char
-            yield (self.Token_Type['OP'], self.SINGLE_OPS[char])
+            yield (self.Token_Type['OP'], self.SINGLE_OPS[char], start_line, start_col)
         else:
             # Shouldn't happen if jump table routed it here
             raise SyntaxError(f"Invalid operator sequence: '{char}'")
 
-
-
-    def handle_numbers(self) -> Generator[tuple[str,int|float]]:
+    def handle_numbers(self) -> Generator[tuple[str,int|float,int,int]]:
         start = self.index
+        start_col = self.col
+        start_line = self.line
         is_float = False
         #INT's
         while self.current_char is not None and self.current_char.isdigit():
@@ -186,12 +200,15 @@ class Lexer:
         num_group = self.source[start:self.index] # group them at one place by using slicing the start is well the start var and the current index is the end with everything in between thats why we have :
 
         if is_float:
-            yield (self.Token_Type['FLOAT'],fast_float(num_group))
+            yield (self.Token_Type['FLOAT'],fast_float(num_group), start_line, start_col)
         else:
-            yield (self.Token_Type['INT'],fast_int(num_group))
+            yield (self.Token_Type['INT'],fast_int(num_group), start_line, start_col)
 
-    def handle_strings(self):
+    def handle_strings(self) -> Generator[tuple]:
         quote = self.current_char
+        start_col = self.col
+        start_line = self.line
+
         self.next_token()
         result = []
 
@@ -210,29 +227,32 @@ class Lexer:
             raise SyntaxError("Unterminated string literal")
 
         self.next_token()  # eat closing quote
-        yield (self.Token_Type['STR'], ''.join(result))
+        yield (self.Token_Type['STR'], ''.join(result), start_line, start_col)
 
 
-    def handle_ident_keyword_typehints(self) -> Generator[tuple[str,str]]:
+    def handle_ident_keyword_typehints(self) -> Generator[tuple[str,str,int,int]]:
         start = self.index
+        start_col = self.col
+        start_line = self.line
         while self.current_char is not None and (self.current_char.isalnum() or self.current_char == '_'):
             self.next_token()
         word = self.source[start:self.index] # slice into group
 
         if word in self.keywords:
-            yield (self.Token_Type['KEYWORD'], self.keywords[word])
+            yield (self.Token_Type['KEYWORD'], self.keywords[word], start_line, start_col)
         elif word in self.type_hints:
-            yield (self.Token_Type['TYPE_HINT'], self.type_hints[word])
+            yield (self.Token_Type['TYPE_HINT'], self.type_hints[word], start_line, start_col)
         else:
-            yield (self.Token_Type['IDENTIFIER'], word)
+            yield (self.Token_Type['IDENTIFIER'], word, start_line, start_col)
 
-    def handle_delimiter(self) -> Generator[tuple[str,str]]:
+    def handle_delimiter(self) -> Generator[tuple[str,str,int,int]]:
         delim = self.DELIMITER[self.current_char]
+        start_line,start_col = self.line, self.col
         self.next_token()  # <-- MOVE BEFORE YIELD
-        yield (self.Token_Type['DELIMITER'], delim)
+        yield (self.Token_Type['DELIMITER'], delim, start_line, start_col)
     """===Main loop==="""
     
-    def tokenize(self) -> Generator:
+    def tokenize(self) -> Generator[tuple]:
         while self.current_char is not None and self.index < self.length:
             byte = ord(self.current_char)
             if byte > 255: # ASCLL is 256 so if the number is bigger then 255 use a error
@@ -241,4 +261,4 @@ class Lexer:
             token = handler()
             if token:
                 yield from token
-        yield (self.END['eof'], None)
+        yield (self.END['eof'], None, self.line, self.col + 1)
