@@ -89,21 +89,20 @@ class Lexer:
         self.current_char = None  # think of this like cpu registors
 
         self.line = 1
-        self.col = 1
+        self.col = 0
 
         self.jump_table = self.build_256_jump_table()
         self.next_token()
 
-    def next_token(self,step:int = 1):
+    def next_token(self):
 
-        for _ in range(step):
-            if self.current_char == '\n':
-                self.line += 1
-                self.col = 1
-            else:
-                self.col += 1
+        if self.current_char == '\n':
+            self.line += 1
+            self.col = 1
+        else:
+            self.col += 1
 
-        self.index += step
+        self.index += 1
         self.current_char = self.source[self.index] if self.index < self.length else None
 
     """===build==="""
@@ -153,7 +152,8 @@ class Lexer:
             for cand in candidates:
                 end = self.index + len(cand)
                 if end <= self.length and self.source[self.index:end] == cand:
-                    self.next_token(step=len(cand))
+                    for _ in range(len(cand)):
+                        self.next_token()
                     yield (self.Token_Type['OP'], self.ALL_OPS[cand], start_line, start_col)
                     return # keep return or the func will not end
 
@@ -261,4 +261,4 @@ class Lexer:
             token = handler()
             if token:
                 yield from token
-        yield (self.END['eof'], None, self.line, self.col + 1)
+        yield (self.END['eof'], None, self.line, self.col)
