@@ -20,7 +20,7 @@ from front_end.Lexer import Lexer
 from front_end.Parser import Top_level_parser
 from numpy import fromiter,dtype
 
-TOKEN_DTYPE = dtype([('type', 'U32'), ('value', 'O')])
+TOKEN_DTYPE = dtype([('type', 'U32'), ('value', 'O'),('line', 'i4'), ('col', 'i4')])
 
 def run_langu(user_input):
     # 1. Lexer produces a generator
